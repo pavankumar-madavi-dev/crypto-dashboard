@@ -9,17 +9,18 @@ app = Flask(__name__)
 API_KEY = os.environ.get("BINANCE_API_KEY", "")
 SECRET = os.environ.get("BINANCE_SECRET", "")
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "")
+TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "@GlobalTraderPavan")
 
 prices = {
-    "BTCUSDT": {"name":"BTC","price":"0","change":"0","high":"0","low":"0","funding":"0"},
-    "ETHUSDT": {"name":"ETH","price":"0","change":"0","high":"0","low":"0","funding":"0"},
-    "BNBUSDT": {"name":"BNB","price":"0","change":"0","high":"0","low":"0","funding":"0"},
-    "SOLUSDT": {"name":"SOL","price":"0","change":"0","high":"0","low":"0","funding":"0"},
-    "XRPUSDT": {"name":"XRP","price":"0","change":"0","high":"0","low":"0","funding":"0"},
+    "BTCUSDT": {"name":"BTC","price":"0","change":"0","high":"0","low":"0"},
+    "ETHUSDT": {"name":"ETH","price":"0","change":"0","high":"0","low":"0"},
+    "BNBUSDT": {"name":"BNB","price":"0","change":"0","high":"0","low":"0"},
+    "SOLUSDT": {"name":"SOL","price":"0","change":"0","high":"0","low":"0"},
+    "XRPUSDT": {"name":"XRP","price":"0","change":"0","high":"0","low":"0"},
 }
 
 last_signals = {}
+signal_count = {"count": 0}
 
 def get_signal(change):
     c = float(change)
@@ -35,28 +36,35 @@ def get_signal(change):
         return "HOLD 🟡", "hold", "normal"
 
 def get_sl_target(price, signal_class):
-    p = float(price.replace(",",""))
-    if signal_class == "buy":
-        sl = p * 0.98
-        t1 = p * 1.02
-        t2 = p * 1.04
-    elif signal_class == "sell":
-        sl = p * 1.02
-        t1 = p * 0.98
-        t2 = p * 0.96
-    else:
-        sl = p * 0.99
-        t1 = p * 1.01
-        t2 = p * 1.02
-    return f"{sl:,.2f}", f"{t1:,.2f}", f"{t2:,.2f}"
+    try:
+        p = float(price.replace(",",""))
+        if signal_class == "buy":
+            sl = p * 0.98
+            t1 = p * 1.02
+            t2 = p * 1.04
+        elif signal_class == "sell":
+            sl = p * 1.02
+            t1 = p * 0.98
+            t2 = p * 0.96
+        else:
+            sl = p * 0.99
+            t1 = p * 1.01
+            t2 = p * 1.02
+        return f"{sl:,.2f}", f"{t1:,.2f}", f"{t2:,.2f}"
+    except:
+        return "0", "0", "0"
 
 def send_telegram(msg):
     try:
         if TG_TOKEN and TG_CHAT:
             url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-            requests.post(url, data={"chat_id": TG_CHAT, "text": msg, "parse_mode": "HTML"}, timeout=5)
-    except:
-        pass
+            requests.post(url, data={
+                "chat_id": TG_CHAT,
+                "text": msg,
+                "parse_mode": "HTML"
+            }, timeout=5)
+    except Exception as e:
+        print("Telegram error:", e)
 
 def fetch_data():
     try:
@@ -73,7 +81,10 @@ def fetch_data():
             url = "https://api.coingecko.com/api/v3/coins/markets"
             params = {"vs_currency":"usd","ids":"bitcoin,ethereum,binancecoin,solana,ripple"}
             r = requests.get(url, params=params, timeout=10).json()
-            mapping = {"bitcoin":"BTCUSDT","ethereum":"ETHUSDT","binancecoin":"BNBUSDT","solana":"SOLUSDT","ripple":"XRPUSDT"}
+            mapping = {
+                "bitcoin":"BTCUSDT","ethereum":"ETHUSDT",
+                "binancecoin":"BNBUSDT","solana":"SOLUSDT","ripple":"XRPUSDT"
+            }
             for c in r:
                 key = mapping.get(c["id"])
                 if key:
@@ -86,32 +97,37 @@ def fetch_data():
 
 def check_and_send_signals():
     for symbol, data in prices.items():
+        if data["price"] == "0":
+            continue
         signal, sc, strength = get_signal(data["change"])
         sl, t1, t2 = get_sl_target(data["price"], sc)
         prev = last_signals.get(symbol, "")
-        if signal != prev and strength == "strong":
+        if signal != prev:
             last_signals[symbol] = signal
+            signal_count["count"] += 1
             msg = f"""🚀 <b>Global Trading Signal</b>
 
 📌 <b>{data['name']}/USDT</b>
 💰 Price: <b>${data['price']}</b>
-📊 Change: {data['change']}%
+📊 Change: <b>{data['change']}%</b>
+📈 High: ${data['high']} | 📉 Low: ${data['low']}
 
 🎯 Signal: <b>{signal}</b>
 
-📉 Stop Loss: <b>${sl}</b>
+🛑 Stop Loss: <b>${sl}</b>
 🎯 Target 1: <b>${t1}</b>
 🎯 Target 2: <b>${t2}</b>
 
+📊 Signal #{signal_count['count']}
 ⚠️ Trade at your own risk!
-"""
+🌐 t.me/GlobalTraderPavan"""
             send_telegram(msg)
 
 def update_loop():
     while True:
         fetch_data()
         check_and_send_signals()
-        time.sleep(15)
+        time.sleep(30)
 
 t = threading.Thread(target=update_loop, daemon=True)
 t.start()
@@ -126,19 +142,21 @@ HTML = '''
 *{box-sizing:border-box;}
 body{background:#0a0a0a;color:#fff;font-family:Arial;padding:10px;margin:0;}
 h1{color:#00ff88;text-align:center;font-size:20px;margin:10px 0 3px;}
-.sub{text-align:center;color:#888;font-size:12px;margin:0 0 5px;}
+.sub{text-align:center;color:#888;font-size:12px;margin:0 0 3px;}
 .live{color:#00ff88;font-size:12px;text-align:center;margin-bottom:10px;}
+.tg{text-align:center;margin:5px 0;}
+.tg a{color:#00aaff;font-size:13px;}
 .card{background:#1a1a2e;border-radius:12px;padding:12px;margin:8px 0;border:1px solid #333;}
 .coin{font-size:14px;font-weight:bold;color:#00ff88;}
 .price{font-size:26px;color:#fff;margin:4px 0;font-weight:bold;}
 .up{color:#00ff88;font-size:14px;}
 .down{color:#ff4444;font-size:14px;}
 .info{font-size:12px;color:#888;margin:3px 0;}
-.sl{font-size:12px;color:#ff4444;margin:2px 0;}
-.target{font-size:12px;color:#00ff88;margin:2px 0;}
-.buy{background:#00ff8822;padding:6px 10px;border-radius:5px;margin-top:6px;font-size:13px;font-weight:bold;}
-.sell{background:#ff444422;padding:6px 10px;border-radius:5px;margin-top:6px;font-size:13px;font-weight:bold;}
-.hold{background:#ffaa0022;padding:6px 10px;border-radius:5px;margin-top:6px;font-size:13px;}
+.sl{font-size:12px;color:#ff4444;margin:2px 0;font-weight:bold;}
+.target{font-size:12px;color:#00ff88;margin:2px 0;font-weight:bold;}
+.buy{background:#00ff8822;padding:6px 10px;border-radius:5px;margin-top:6px;font-size:13px;font-weight:bold;color:#00ff88;}
+.sell{background:#ff444422;padding:6px 10px;border-radius:5px;margin-top:6px;font-size:13px;font-weight:bold;color:#ff4444;}
+.hold{background:#ffaa0022;padding:6px 10px;border-radius:5px;margin-top:6px;font-size:13px;color:#ffaa00;}
 .footer{text-align:center;color:#444;font-size:11px;margin-top:10px;}
 </style>
 </head>
@@ -146,6 +164,7 @@ h1{color:#00ff88;text-align:center;font-size:20px;margin:10px 0 3px;}
 <h1>🚀 Global Trading Dashboard</h1>
 <p class="sub">Powered by Binance | Free Signals</p>
 <p class="live">🟢 LIVE Real-time Signals</p>
+<p class="tg"><a href="https://t.me/GlobalTraderPavan">📢 Join Telegram Channel</a></p>
 <div id="dashboard"></div>
 <div class="footer" id="footer"></div>
 <script>
@@ -164,7 +183,7 @@ function update() {
           <div class="info">📈 H: $${p.high} | 📉 L: $${p.low}</div>
           <div class="sl">🛑 Stop Loss: $${p.sl}</div>
           <div class="target">🎯 T1: $${p.t1} | T2: $${p.t2}</div>
-          <div class="${p.signal_class}">📊 ${p.signal}</div>
+          <div class="${p.sc}">📊 ${p.signal}</div>
         </div>`;
       });
       document.getElementById('dashboard').innerHTML = html;
@@ -173,7 +192,7 @@ function update() {
     });
 }
 update();
-setInterval(update, 2000);
+setInterval(update, 3000);
 </script>
 </body>
 </html>
@@ -189,7 +208,7 @@ def api_prices():
     for k, v in prices.items():
         signal, sc, strength = get_signal(v["change"])
         sl, t1, t2 = get_sl_target(v["price"], sc)
-        result[k] = {**v, "signal": signal, "signal_class": sc, "sl": sl, "t1": t1, "t2": t2}
+        result[k] = {**v, "signal": signal, "sc": sc, "sl": sl, "t1": t1, "t2": t2}
     return jsonify(result)
 
 if __name__ == "__main__":
