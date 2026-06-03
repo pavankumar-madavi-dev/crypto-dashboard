@@ -1,1 +1,1 @@
-worker: python crypto_dashboard.py
+web: python app.py
