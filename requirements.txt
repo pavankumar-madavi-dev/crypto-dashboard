@@ -3,3 +3,6 @@ requests
 websocket-client
 colorama
 python-telegram-bot
+ccxt
+pandas
+numpy
