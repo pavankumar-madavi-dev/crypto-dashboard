@@ -8,11 +8,11 @@ from datetime import datetime
 # 🛠️ कॉन्फिगरेशन और क्रेडेंशियल्स (CONFIG ZONE)
 # =====================================================================
 # टेलीग्राम बोट सेटिंग्स
-BOT_TOKEN = "7488049281:AAFXg3v-7m4Y_S5WvC5w532S1wZ6v9qXz8o"
-CHAT_ID = "@GlobalTradingSignals"
+BOT_TOKEN = "8242319724:AAEu7_zaM-u7VeUGDNDjhqg7zgTVBH7KPR"
+CHAT_ID = "@GlobalTraderPavan"
 
 # रेलवे API सेटिंग्स
-RAILWAY_URL = "https://crypto-dashboard-production-2f8c.up.railway.app/api/update_prices" # आपकी रेलवे ऐप का लाइव URL डालें
+RAILWAY_URL = "https://web-production-1f385.up.railway.app/api/update_prices" # आपकी रेलवे ऐप का लाइव URL डालें
 SECRET_TOKEN = "ProPlus_SI_Secure_2026"
 
 # अंतरराष्ट्रीय और सबसे पॉपुलर क्रिप्टोकरेंसी की लिस्ट
