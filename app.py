@@ -1,681 +1,238 @@
-from flask import Flask, render_template_string, jsonify
-import json
+from flask import Flask, render_template_string, jsonify, request
 import os
-from datetime import datetime
-import threading
-import time
 
 app = Flask(__name__)
 
-DATA_FILE = "market_data.json"
+# सुरक्षा टोकन (टर्मक्स और क्लाउड को सिंक रखने के लिए)
+SECRET_TOKEN = "ProPlus_SI_Secure_2026"
 
-# ═══════════════════════════════════════════════════════════
-# LOAD MARKET DATA
-# ═══════════════════════════════════════════════════════════
-def load_market_data():
-    """Load data from si_trader.py"""
-    try:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"Load error: {e}")
-    
-    return {"timestamp": datetime.now().isoformat(), "data": []}
+# इन-मेमोरी ग्लोबल वेरिएबल
+live_market_data = []
 
-# ═══════════════════════════════════════════════════════════
-# PREMIUM HTML/CSS/JS DASHBOARD
-# ═══════════════════════════════════════════════════════════
 HTML = '''
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro_Plus • Elite SI Trading System</title>
+    <title>Pro_Plus System Intelligence | Institutional Analytics</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg-main: #0B0E11;       
+            --bg-card: #161A1E;       
+            --border-color: #2B3139;  
+            --text-main: #EAECEF;     
+            --text-muted: #848E9C;    
+            --neon-green: #02C076;    
+            --neon-red: #F6465D;      
+            --neon-yellow: #F0B90B;   
         }
 
-        body {
-            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
-            color: #e0e0e0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow-x: hidden;
-            min-height: 100vh;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background-color: var(--bg-main); color: var(--text-main); padding: 0; display: flex; flex-direction: column; min-height: 100vh; }
+        
+        .container { padding: 15px; flex-grow: 1; display: flex; flex-direction: column; }
 
-        /* ── HEADER ── */
-        .header {
-            background: rgba(15, 23, 42, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 20px;
-            border-bottom: 2px solid rgba(88, 166, 255, 0.3);
-            position: sticky;
-            top: 0;
-            z-index: 100;
+        /* LIVE CRYPTO TICKER TAPE */
+        .ticker-wrap {
+            width: 100%; background: #000000; border-bottom: 1px solid var(--border-color);
+            overflow: hidden; padding: 6px 0; font-family: 'JetBrains Mono', monospace; font-size: 12px;
         }
+        .ticker-move { display: flex; width: max-content; animation: ticker 25s linear infinite; }
+        .ticker-item { padding: 0 20px; display: flex; gap: 8px; align-items: center; border-right: 1px solid #1F2226; }
+        @keyframes ticker { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-33.33%, 0, 0); } }
 
-        .header-content {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+        /* HEADER BRANDING */
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border-color); padding-bottom: 15px; margin-top: 15px; margin-bottom: 15px; }
+        .brand-zone { display: flex; flex-direction: column; }
+        .brand-title { font-size: 20px; font-weight: 700; color: var(--neon-yellow); letter-spacing: -0.5px; }
+        .admin-badge { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-top: 4px; }
+        .admin-name { color: #FFFFFF; font-weight: bold; }
+        .live-badge { background: rgba(2, 192, 118, 0.1); border: 1px solid var(--neon-green); color: var(--neon-green); padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+        .offline-badge { background: rgba(246, 70, 93, 0.1); border: 1px solid var(--neon-red); color: var(--neon-red); padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 24px;
-            font-weight: 900;
-            background: linear-gradient(135deg, #58a6ff, #1f6feb);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+        /* INSTITUTIONAL NEWS TICKER */
+        .news-box {
+            background: rgba(240, 185, 11, 0.04); border: 1px dashed rgba(240, 185, 11, 0.25);
+            border-radius: 6px; padding: 10px 15px; margin-bottom: 20px; overflow: hidden; display: flex; align-items: center; gap: 10px;
         }
+        .news-label { background: var(--neon-yellow); color: #000; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; white-space: nowrap; }
+        .news-scroll { overflow: hidden; position: relative; width: 100%; height: 18px; }
+        .news-track { position: absolute; width: 100%; animation: newsCycle 12s steps(3) infinite; }
+        .news-item { height: 18px; line-height: 18px; font-size: 12px; color: #EAECEF; font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+        @keyframes newsCycle { 0%, 30% { top: 0; } 33%, 63% { top: -18px; } 66%, 96% { top: -36px; } 100% { top: 0; } }
 
-        .logo-icon {
-            font-size: 28px;
-        }
-
-        .timer-badge {
-            background: rgba(88, 166, 255, 0.15);
-            border: 1px solid rgba(88, 166, 255, 0.5);
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 12px;
-            color: #58a6ff;
-            font-weight: 600;
-        }
-
-        /* ── STATS BAR ── */
-        .stats-bar {
-            background: rgba(20, 28, 50, 0.6);
-            padding: 15px 20px;
-            border-bottom: 1px solid rgba(88, 166, 255, 0.2);
-            display: flex;
-            gap: 30px;
-            justify-content: center;
-            flex-wrap: wrap;
-            font-size: 13px;
-        }
-
-        .stat-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .stat-label {
-            color: #888;
-        }
-
-        .stat-value {
-            color: #58a6ff;
-            font-weight: 600;
-        }
-
-        /* ── MAIN CONTAINER ── */
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 30px 20px;
-        }
-
-        .section-title {
-            font-size: 20px;
-            font-weight: 700;
-            color: #e0e0e0;
-            margin: 30px 0 15px;
-            padding-left: 15px;
-            border-left: 4px solid #58a6ff;
-        }
-
-        /* ── GRID LAYOUT ── */
-        .cards-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        /* ── CARD STYLES ── */
-        .card {
-            background: rgba(20, 28, 50, 0.5);
-            border: 1px solid rgba(88, 166, 255, 0.2);
-            border-radius: 12px;
-            padding: 20px;
-            backdrop-filter: blur(10px);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .card:hover {
-            border-color: rgba(88, 166, 255, 0.5);
-            background: rgba(20, 28, 50, 0.8);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(88, 166, 255, 0.1);
-        }
-
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: linear-gradient(90deg, #58a6ff, transparent);
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .card:hover::before {
-            opacity: 1;
-        }
-
-        /* ── SYMBOL HEADER ── */
-        .symbol-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid rgba(88, 166, 255, 0.1);
-        }
-
-        .symbol-name {
-            font-size: 18px;
-            font-weight: 700;
-            color: #58a6ff;
-        }
-
-        .price-badge {
-            font-size: 22px;
-            font-weight: 900;
-            color: #e0e0e0;
-        }
-
-        .change-badge {
-            padding: 5px 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .change-badge.positive {
-            background: rgba(34, 197, 94, 0.2);
-            color: #22c55e;
-        }
-
-        .change-badge.negative {
-            background: rgba(239, 68, 68, 0.2);
-            color: #ef4444;
-        }
-
-        /* ── INFO ROW ── */
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 10px 0;
-            font-size: 12px;
-            border-bottom: 1px solid rgba(88, 166, 255, 0.05);
-        }
-
-        .info-label {
-            color: #666;
-        }
-
-        .info-value {
-            color: #58a6ff;
-            font-weight: 600;
-        }
-
-        /* ── SIGNAL BADGE ── */
-        .signal-section {
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid rgba(88, 166, 255, 0.1);
-        }
-
-        .signal-badge {
-            display: inline-block;
-            padding: 10px 15px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 700;
-            width: 100%;
-            text-align: center;
-            margin-bottom: 10px;
-        }
-
-        .signal-buy {
-            background: rgba(34, 197, 94, 0.2);
-            color: #22c55e;
-            border: 1px solid rgba(34, 197, 94, 0.4);
-        }
-
-        .signal-sell {
-            background: rgba(239, 68, 68, 0.2);
-            color: #ef4444;
-            border: 1px solid rgba(239, 68, 68, 0.4);
-        }
-
-        .signal-hold {
-            background: rgba(59, 130, 246, 0.2);
-            color: #3b82f6;
-            border: 1px solid rgba(59, 130, 246, 0.4);
-        }
-
-        /* ── TARGETS & SL ── */
-        .targets-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .target-box {
-            background: rgba(88, 166, 255, 0.1);
-            border: 1px solid rgba(88, 166, 255, 0.2);
-            padding: 10px;
-            border-radius: 6px;
-            font-size: 11px;
-            text-align: center;
-        }
-
-        .target-label {
-            color: #888;
-            font-size: 10px;
-        }
-
-        .target-value {
-            color: #58a6ff;
-            font-weight: 700;
-            font-size: 14px;
-            margin-top: 3px;
-        }
-
-        /* ── TREND GAUGE ── */
-        .trend-gauge {
-            display: flex;
-            gap: 5px;
-            margin: 10px 0;
-        }
-
-        .trend-segment {
-            flex: 1;
-            height: 8px;
-            border-radius: 4px;
-            background: rgba(88, 166, 255, 0.1);
-        }
-
-        .trend-segment.bullish {
-            background: linear-gradient(90deg, #22c55e, rgba(34, 197, 94, 0.3));
-        }
-
-        .trend-segment.bearish {
-            background: linear-gradient(90deg, #ef4444, rgba(239, 68, 68, 0.3));
-        }
-
-        .trend-segment.neutral {
-            background: linear-gradient(90deg, #3b82f6, rgba(59, 130, 246, 0.3));
-        }
-
-        /* ── PREMIUM BADGE ── */
-        .premium-lock {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid rgba(239, 68, 68, 0.5);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 11px;
-            color: #ef4444;
-            font-weight: 600;
-            display: none;
-        }
-
-        .card.premium .premium-lock {
-            display: block;
-        }
-
-        .card.premium {
-            opacity: 0.6;
-            pointer-events: none;
-        }
-
-        /* ── FOOTER ── */
-        .footer {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-            font-size: 12px;
-            border-top: 1px solid rgba(88, 166, 255, 0.1);
-            margin-top: 40px;
-        }
-
-        .footer-link {
-            color: #58a6ff;
-            text-decoration: none;
-        }
-
-        .footer-link:hover {
-            text-decoration: underline;
-        }
-
-        /* ── LOADING ── */
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-
-        .spinner {
-            border: 2px solid rgba(88, 166, 255, 0.2);
-            border-top: 2px solid #58a6ff;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* ── RESPONSIVE ── */
-        @media (max-width: 768px) {
-            .cards-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .header-content {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .stats-bar {
-                gap: 15px;
-            }
-        }
+        /* GRID & CARDS */
+        .section-title { font-size: 1.1rem; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 16px; margin-bottom: 25px; }
+        .card { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; position: relative; overflow: hidden; }
+        .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+        .symbol { font-size: 1.2rem; font-weight: 700; color: #FFFFFF; display: flex; align-items: center; gap: 6px; }
+        .badge { font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 4px; text-transform: uppercase; }
+        .bg-side { background: rgba(240, 185, 11, 0.12); color: var(--neon-yellow); border: 1px solid rgba(240, 185, 11, 0.2); }
+        .bg-vol { background: rgba(246, 70, 93, 0.12); color: var(--neon-red); border: 1px solid rgba(246, 70, 93, 0.2); }
+        .metrics { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+        .row { display: flex; justify-content: space-between; align-items: center; background: rgba(255, 255, 255, 0.01); padding: 6px 8px; border-radius: 6px; }
+        .lbl { color: var(--text-muted); font-size: 12px; }
+        .val { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #FFFFFF; }
+        .dev { border-top: 1px dashed var(--border-color); padding-top: 8px; margin-top: 4px; }
+        .premium-locked { filter: blur(5px); pointer-events: none; user-select: none; }
+        .lock-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(22, 26, 30, 0.94); display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center; }
+        .btn-premium { background: linear-gradient(135deg, var(--neon-yellow), #C99B00); color: #000; padding: 8px 16px; border: none; border-radius: 6px; font-weight: 700; font-size: 12px; text-decoration: none; margin-top: 10px; box-shadow: 0 4px 10px rgba(240, 185, 11, 0.2); }
+        footer { border-top: 1px solid var(--border-color); padding: 15px 0; text-align: center; font-size: 11px; color: var(--text-muted); margin-top: auto; background: #000000; }
+        .footer-owner { color: var(--text-main); font-weight: 600; }
     </style>
 </head>
 <body>
-    <!-- HEADER -->
-    <div class="header">
-        <div class="header-content">
-            <div class="logo">
-                <span class="logo-icon">⚡</span>
-                <span>Pro_Plus</span>
-            </div>
-            <div class="timer-badge">
-                🟢 LIVE • Next Scan: <span id="timer">5m 0s</span>
-            </div>
-        </div>
+
+<div class="ticker-wrap">
+    <div class="ticker-move" id="live-ticker">
+        <div class="ticker-item">⚡ Loading Live Ticker Data...</div>
     </div>
+</div>
 
-    <!-- STATS BAR -->
-    <div class="stats-bar">
-        <div class="stat-item">
-            <span class="stat-label">System Status:</span>
-            <span class="stat-value">🟢 ONLINE</span>
+<div class="container">
+    <header>
+        <div class="brand-zone">
+            <div class="brand-title">🚀 Pro_Plus System Intelligence</div>
+            <div class="admin-badge">Global Architecture: <span class="admin-name">Pavankumar Madavi</span></div>
         </div>
-        <div class="stat-item">
-            <span class="stat-label">Last Update:</span>
-            <span class="stat-value" id="last-update">--:--:--</span>
+        <div class="status-zone">
+            <div class="offline-badge" id="live-status">● SI ENGINE OFFLINE</div>
         </div>
-        <div class="stat-item">
-            <span class="stat-label">Symbols Tracked:</span>
-            <span class="stat-value" id="symbol-count">5</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Active Signals:</span>
-            <span class="stat-value" id="signal-count">0</span>
-        </div>
-    </div>
+    </header>
 
-    <!-- CONTAINER -->
-    <div class="container">
-        <!-- FREE SIGNALS SECTION -->
-        <div class="section-title">📊 Free Signals Preview</div>
-        <div class="cards-grid" id="free-cards">
-            <div class="loading">
-                <div class="spinner"></div>
-                <p>Loading real-time data...</p>
-            </div>
-        </div>
-
-        <!-- PREMIUM SECTION -->
-        <div class="section-title">🔒 Premium SI Circle (Advanced Analysis)</div>
-        <div class="cards-grid" id="premium-cards">
-            <div class="loading">
-                <div class="spinner"></div>
-                <p>Unlock premium features...</p>
+    <div class="news-box">
+        <div class="news-label">🚨 Institutional Feed</div>
+        <div class="news-scroll">
+            <div class="news-track" id="news-container">
+                <div class="news-item">Waiting for Secure Termux Terminal Feed...</div>
             </div>
         </div>
     </div>
 
-    <!-- FOOTER -->
-    <div class="footer">
-        <p>⚡ <strong>Pro_Plus</strong> • Elite System Intelligence Trading Platform</p>
-        <p>🌐 Join: <a href="https://t.me/GlobalTraderPavan" class="footer-link">@GlobalTraderPavan</a> | ⚠️ Trade at your own risk</p>
-        <p style="margin-top: 10px; color: #555;">Powered by Binance Futures | Multi-Timeframe AI Analysis</p>
-    </div>
+    <h3 class="section-title" style="color: var(--neon-green);">📊 Free Institutional Signals</h3>
+    <div class="grid" id="free-grid"></div>
 
-    <script>
-        const FREE_SYMBOLS = ["BTC/USDT", "ETH/USDT"];
-        const PREMIUM_SYMBOLS = ["SOL/USDT", "XRP/USDT", "DOGE/USDT"];
-        let allData = {};
-        let countdownTime = 300;
+    <h3 class="section-title" style="color: var(--neon-yellow);">🔒 Premium Alpha Circle (Advanced Analytics)</h3>
+    <div class="grid" id="premium-grid"></div>
+</div>
 
-        // ── FETCH DATA ──
-        async function fetchData() {
-            try {
-                const response = await fetch('/api/data');
-                const data = await response.json();
-                
-                if (data.data && data.data.length > 0) {
-                    allData = {};
-                    data.data.forEach(item => {
-                        allData[item.symbol] = item;
-                    });
-                    
-                    updateUI();
-                    updateLastUpdate(data.timestamp);
-                    countdownTime = 300;
+<footer>
+    <div>© 2026 <span class="footer-owner">Pro_Plus System Intelligence</span> | Built for Global Scale by <span class="footer-owner">Pavankumar Madavi</span></div>
+</footer>
+
+<script>
+    async function refreshDashboard() {
+        try {
+            const r = await fetch('/api/prices');
+            const data = await r.json();
+            
+            const freeGrid = document.getElementById('free-grid');
+            const premiumGrid = document.getElementById('premium-grid');
+            const tickerObj = document.getElementById('live-ticker');
+            const newsObj = document.getElementById('news-container');
+            
+            if (data.length === 0 || data[0].waiting) return;
+
+            freeGrid.innerHTML = ''; premiumGrid.innerHTML = '';
+            
+            // 1. अपडेट लाइव कॉइन टिकर पट्टी
+            let tickerHtml = "";
+            data.forEach(coin => {
+                let sColor = coin.signal.includes('BUY') ? '#02C076' : coin.signal.includes('SHORT') ? '#F6465D' : '#F0B90B';
+                tickerHtml += `<div class="ticker-item"><span>${coin.logo} ${coin.symbol}:</span> <b style="color:${sColor}">${coin.current_price}</b></div>`;
+            });
+            // टिकर स्मूथ लूप के लिए डेटा को ट्रिपल रिपीट करना
+            tickerObj.innerHTML = tickerHtml + tickerHtml + tickerHtml;
+
+            // 2. अपडेट लाइव न्यूज़ फीड
+            if(data[0].live_news) {
+                let newsHtml = "";
+                data[0].live_news.forEach(news => {
+                    newsHtml += `<div class="news-item">${news}</div>`;
+                });
+                newsObj.innerHTML = newsHtml;
+            }
+
+            // 3. अपडेट ग्रिड कार्ड्स
+            data.forEach((coin, index) => {
+                const modeClass = coin.mode.includes('SIDEWAYS') ? 'bg-side' : 'bg-vol';
+                const trendColor = coin.macro_trend.includes('BEARISH') ? '#F6465D' : '#02C076';
+                let sigColor = '#F0B90B';
+                if (coin.signal.includes('BUY') || coin.signal.includes('LONG')) sigColor = '#02C076';
+                if (coin.signal.includes('SHORT') || coin.signal.includes('SELL')) sigColor = '#F6465D';
+
+                const cardHtml = `
+                    <div class="card">
+                        <div class="card-top">
+                            <span class="symbol">${coin.logo} ${coin.symbol}/USDT</span>
+                            <span class="badge ${modeClass}">${coin.mode}</span>
+                        </div>
+                        <div class="metrics">
+                            <div class="row"><span class="lbl">Market Price:</span><span class="val" style="color:${sigColor}">${coin.current_price}</span></div>
+                            <div class="row"><span class="lbl">Macro Trend (HTF):</span><span class="val" style="color:${trendColor}">${coin.macro_trend}</span></div>
+                            <div class="row"><span class="lbl">Volume Ratio:</span><span class="val">${coin.vol_ratio}</span></div>
+                            <div class="row dev"><span class="lbl">Intelligence Signal:</span><span class="val" style="color:${sigColor}">${coin.signal}</span></div>
+                            <div class="row"><span class="lbl">Dynamic StopLoss:</span><span class="val" style="color:#F6465D">${coin.dynamic_stop_loss}</span></div>
+                            <div class="row"><span class="lbl">Target Range:</span><span class="val" style="color:#02C076">${coin.target_range}</span></div>
+                            <div class="row dev"><span class="lbl">Institutional Supply:</span><span class="val">${coin.supply_zone}</span></div>
+                            <div class="row"><span class="lbl">Institutional Demand:</span><span class="val">${coin.demand_zone}</span></div>
+                        </div>
+                    </div>`;
+
+                if (index < 2) {
+                    freeGrid.innerHTML += cardHtml;
+                } else {
+                    premiumGrid.innerHTML += `
+                    <div class="card" style="min-height: 310px;">
+                        <div class="premium-locked">${cardHtml}</div>
+                        <div class="lock-overlay">
+                            <h4 style="color:#F0B90B; font-size:13px; font-weight:700; letter-spacing:0.5px;">🔒 ALPHA MEMBER ACCESS ONLY</h4>
+                            <p style="font-size:11px; color:var(--text-muted); margin:5px 0 10px 0;">Unlock Institutional SMC Order-Blocks & Trailing ATR</p>
+                            <a href="https://t.me/GlobalTraderPavan" target="_blank" class="btn-premium">Join Premium Circle</a>
+                        </div>
+                    </div>`;
                 }
-            } catch (error) {
-                console.error('Fetch error:', error);
-            }
-        }
-
-        // ── BUILD CARD ──
-        function buildCard(symbol, isPremium = false) {
-            const data = allData[symbol];
-            if (!data) return '';
-
-            const isPositive = data.change >= 0;
-            const signal = data.signal || 'HOLD';
-            const signalClass = data.action === 'BUY' ? 'signal-buy' : 
-                               data.action === 'SELL' ? 'signal-sell' : 'signal-hold';
-
-            const macroColor = data.macro_trend === 'BULLISH' ? 'bullish' :
-                              data.macro_trend === 'BEARISH' ? 'bearish' : 'neutral';
-
-            let html = `
-                <div class="card ${isPremium ? 'premium' : ''}">
-                    <div class="premium-lock">🔒 PREMIUM</div>
-                    
-                    <div class="symbol-header">
-                        <div class="symbol-name">📌 ${symbol}</div>
-                        <div class="price-badge">$${data.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 4})}</div>
-                    </div>
-
-                    <div class="change-badge ${isPositive ? 'positive' : 'negative'}">
-                        ${isPositive ? '▲' : '▼'} ${Math.abs(data.change).toFixed(2)}%
-                    </div>
-
-                    <div class="info-row">
-                        <span class="info-label">Macro Trend:</span>
-                        <span class="info-value">${data.macro_trend}</span>
-                    </div>
-
-                    <div class="trend-gauge">
-                        <div class="trend-segment ${macroColor}"></div>
-                        <div class="trend-segment ${macroColor}"></div>
-                        <div class="trend-segment ${macroColor}"></div>
-                    </div>
-
-                    <div class="info-row">
-                        <span class="info-label">Volatility:</span>
-                        <span class="info-value">${data.volatility_state}</span>
-                    </div>
-
-                    <div class="info-row">
-                        <span class="info-label">Supply Zone:</span>
-                        <span class="info-value">$${data.supply.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 4})}</span>
-                    </div>
-
-                    <div class="info-row">
-                        <span class="info-label">Demand Zone:</span>
-                        <span class="info-value">$${data.demand.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 4})}</span>
-                    </div>
-
-                    <div class="info-row">
-                        <span class="info-label">ATR:</span>
-                        <span class="info-value">${data.atr.toFixed(4)}</span>
-                    </div>
-
-                    <div class="info-row">
-                        <span class="info-label">RSI:</span>
-                        <span class="info-value">${data.rsi.toFixed(2)}</span>
-                    </div>
-
-                    <div class="info-row">
-                        <span class="info-label">Volume Ratio:</span>
-                        <span class="info-value">${data.vol_ratio.toFixed(2)}x</span>
-                    </div>
-
-                    <div class="signal-section">
-                        <div class="signal-badge ${signalClass}">
-                            ${data.emoji} ${signal}
-                        </div>
-                        
-                        ${data.targets ? `
-                        <div class="targets-grid">
-                            <div class="target-box">
-                                <div class="target-label">T1</div>
-                                <div class="target-value">$${data.targets.T1.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 4})}</div>
-                            </div>
-                            <div class="target-box">
-                                <div class="target-label">T2</div>
-                                <div class="target-value">$${data.targets.T2.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 4})}</div>
-                            </div>
-                            <div class="target-box">
-                                <div class="target-label">T3</div>
-                                <div class="target-value">$${data.targets.T3.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 4})}</div>
-                            </div>
-                            <div class="target-box">
-                                <div class="target-label">SL</div>
-                                <div class="target-value">$${data.targets.SL.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 4})}</div>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-
-            return html;
-        }
-
-        // ── UPDATE UI ──
-        function updateUI() {
-            let freeHtml = '';
-            let premiumHtml = '';
-
-            FREE_SYMBOLS.forEach(symbol => {
-                freeHtml += buildCard(symbol, false);
             });
 
-            PREMIUM_SYMBOLS.forEach(symbol => {
-                premiumHtml += buildCard(symbol, true);
-            });
-
-            document.getElementById('free-cards').innerHTML = freeHtml || '<p style="color: #666;">No data available</p>';
-            document.getElementById('premium-cards').innerHTML = premiumHtml || '<p style="color: #666;">Upgrade to Premium</p>';
-
-            document.getElementById('symbol-count').textContent = Object.keys(allData).length;
-            
-            let signalCount = Object.values(allData).filter(d => d.action !== 'HOLD').length;
-            document.getElementById('signal-count').textContent = signalCount;
+            const statusObj = document.getElementById('live-status');
+            statusObj.className = "live-badge";
+            statusObj.innerHTML = `● SI SYSTEM GLOBAL LIVE (${new Date().toLocaleTimeString()})`;
+        } catch (e) {
+            const statusObj = document.getElementById('live-status');
+            statusObj.className = "offline-badge";
+            statusObj.innerHTML = `● LIVE SYNC ERROR`;
         }
-
-        // ── UPDATE TIMESTAMP ──
-        function updateLastUpdate(timestamp) {
-            const date = new Date(timestamp);
-            const time = date.toLocaleTimeString();
-            document.getElementById('last-update').textContent = time;
-        }
-
-        // ── COUNTDOWN TIMER ──
-        function updateTimer() {
-            const mins = Math.floor(countdownTime / 60);
-            const secs = countdownTime % 60;
-            document.getElementById('timer').textContent = 
-                `${mins}m ${secs}s`.padStart(4, '0');
-            
-            if (countdownTime > 0) {
-                countdownTime--;
-            } else {
-                countdownTime = 300;
-            }
-        }
-
-        // ── INIT ──
-        fetchData();
-        setInterval(fetchData, 5000);
-        setInterval(updateTimer, 1000);
-    </script>
+    }
+    setInterval(refreshDashboard, 4000);
+    refreshDashboard();
+</script>
 </body>
 </html>
 '''
-
-# ═══════════════════════════════════════════════════════════
-# FLASK ROUTES
-# ═══════════════════════════════════════════════════════════
 
 @app.route("/")
 def index():
     return render_template_string(HTML)
 
-@app.route("/api/data")
-def get_data():
-    data = load_market_data()
-    return jsonify(data)
-
-@app.route("/api/prices")
+@app.route("/api/prices", methods=["GET"])
 def get_prices():
-    """Legacy endpoint for compatibility"""
-    data = load_market_data()
-    result = {}
-    if "data" in data:
-        for item in data["data"]:
-            result[item["symbol"]] = item
-    return jsonify(result)
+    if not live_market_data:
+        return jsonify([{"waiting": True}])
+    return jsonify(live_market_data)
 
-# ═══════════════════════════════════════════════════════════
-# RUN
-# ═══════════════════════════════════════════════════════════
+@app.route("/api/update_prices", methods=["POST"])
+def update_prices():
+    global live_market_data
+    token = request.headers.get("X-SI-Token")
+    if token != SECRET_TOKEN:
+        return jsonify({"status": "unauthorized"}), 401
+
+    live_market_data = request.json
+    return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port)
