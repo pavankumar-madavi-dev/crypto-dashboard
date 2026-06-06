@@ -139,4 +139,4 @@ if __name__ == "__main__":
                 print(f"⚠️ Railway Response: {response.status_code}")
         except Exception as e:
             print(f"❌ Error: {e}")
-        time.sleep(300)
+        time.sleep(60)  # हर 1 मिनट में update
