@@ -6,7 +6,7 @@ from datetime import datetime
 
 BOT_TOKEN = "8242319724:AAEu7_zaM-u7VeUGDNDjhqg7zgTVBH7KPRw"
 CHAT_ID = "@GlobalTraderPavan"
-RAILWAY_URL = "https://1f385.up.railway.app/api/update_prices"
+RAILWAY_URL = "https://web-production-1f385.up.railway.app/"
 SECRET_TOKEN = "ProPlus_SI_Secure_2026"
 
 POPULAR_COINS = [
