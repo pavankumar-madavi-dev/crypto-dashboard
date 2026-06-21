@@ -1,142 +1,77 @@
-import os
-import time
-import requests
-import random
+cat > si_trader.py << 'PYEOF'
+import os, time, requests
 from datetime import datetime
 
-BOT_TOKEN = "8242319724:AAEu7_zaM-u7VeUGDNDjhqg7zgTVBH7KPRw"
-CHAT_ID = "@GlobalTraderPavan"
-RAILWAY_URL = "https://web-production-1f385.up.railway.app/"
-SECRET_TOKEN = "ProPlus_SI_Secure_2026"
+BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+CHANNEL_ID = os.environ.get('TELEGRAM_CHANNEL_ID')
+API_KEY = os.environ.get('BINANCE_API_KEY')
 
-POPULAR_COINS = [
-    {"symbol": "BTC", "name": "Bitcoin", "logo": "₿"},
-    {"symbol": "ETH", "name": "Ethereum", "logo": "Ξ"},
-    {"symbol": "BNB", "name": "BNB Coin", "logo": "🔶"},
-    {"symbol": "SOL", "name": "Solana", "logo": "☀️"},
-    {"symbol": "XRP", "name": "Ripple", "logo": "✕"},
-    {"symbol": "DOGE", "name": "Dogecoin", "logo": "🐕"},
-    {"symbol": "ADA", "name": "Cardano", "logo": "₳"},
-    {"symbol": "MATIC", "name": "Polygon", "logo": "💜"},
-    {"symbol": "DOT", "name": "Polkadot", "logo": "●"},
-    {"symbol": "LINK", "name": "Chainlink", "logo": "🔗"}
-]
-
-def get_live_crypto_news():
+def get_price(symbol):
     try:
-        url = "https://cryptopanic.com/api/v1/posts/?auth_token=pub_free&kind=news&limit=3"
-        res = requests.get(url, timeout=5).json()
-        return [item['title'] for item in res['results'][:3]]
+        r = requests.get(f'https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}', timeout=10)
+        d = r.json()
+        return float(d['lastPrice']), float(d['priceChangePercent'])
     except:
-        return [
-            "Market Update: Institutional accumulation detected in BTC",
-            "Whale Alert: Large transfers spotted on ETH network",
-            "Analysis: Smart money positioning in SOL and BNB"
-        ]
+        return None, None
 
-def get_binance_price(symbol):
+def send_signal():
+    btc, btc_chg = get_price('BTCUSDT')
+    eth, eth_chg = get_price('ETHUSDT')
+    bnb, bnb_chg = get_price('BNBUSDT')
+    sol, sol_chg = get_price('SOLUSDT')
+    
+    if not btc:
+        print('Price fetch failed')
+        return
+    
+    direction = 'LONG 📈' if btc_chg > 0 else 'SHORT 📉'
+    entry_low = round(btc * 0.998, 0)
+    entry_high = round(btc * 1.002, 0)
+    target1 = round(btc * 1.02, 0)
+    target2 = round(btc * 1.04, 0)
+    sl = round(btc * 0.985, 0)
+    
+    msg = f"""📊 *SIGNAL ALERT — GlobalTraderPavan*
+━━━━━━━━━━━━━━━━━━━━
+
+🔶 *BTCUSDT — {direction}*
+
+💰 *Live Price:* ${btc:,.0f} ({btc_chg:+.2f}%)
+📍 *Entry Zone:* ${entry_low:,.0f} – ${entry_high:,.0f}
+🎯 *Target 1:* ${target1:,.0f}
+🎯 *Target 2:* ${target2:,.0f}
+🛑 *Stop Loss:* ${sl:,.0f}
+
+━━━━━━━━━━━━━━━━━━━━
+📈 *Market Update:*
+• ETH: ${eth:,.0f} ({eth_chg:+.2f}%)
+• BNB: ${bnb:,.0f} ({bnb_chg:+.2f}%)
+• SOL: ${sol:,.0f} ({sol_chg:+.2f}%)
+
+━━━━━━━━━━━━━━━━━━━━
+⏰ {datetime.now().strftime('%d %b %Y, %I:%M %p IST')}
+⚡ Strategy: SMC Analysis
+⚠️ Risk: 2% max per trade
+
+🔗 [Binance Join करो](https://www.binance.com/activity/referral-entry/CPA?ref=CPA_009BQG4BOM)
+📲 @GlobalTraderPavan
+━━━━━━━━━━━━━━━━━━━━"""
+
+    url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+    requests.post(url, json={
+        'chat_id': CHANNEL_ID,
+        'text': msg,
+        'parse_mode': 'Markdown',
+        'disable_web_page_preview': True
+    })
+    print(f'Signal sent at {datetime.now()}')
+
+print('GlobalTraderPavan Signal Bot Started!')
+while True:
     try:
-        res = requests.get(
-            f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}USDT",
-            timeout=5
-        ).json()
-        return float(res['price'])
-    except:
-        return 10.0
-
-def send_telegram_signal(coin):
-    sig_emoji = "🟢" if "BUY" in coin['signal'] else "🔴" if "SHORT" in coin['signal'] else "🟡"
-    trend_emoji = "📈" if "BULLISH" in coin['macro_trend'] else "📉"
-    message = (
-        f"🚀 *Global Trading Signal*\n\n"
-        f"📌 *{coin['logo']} {coin['symbol']}/USDT*\n"
-        f"💰 Price: `{coin['current_price']}`\n"
-        f"{trend_emoji} Macro Trend: *{coin['macro_trend']}*\n\n"
-        f"{sig_emoji} *Signal: {coin['signal']}*\n\n"
-        f"📱 [Official Telegram Channel](https://t.me/GlobalTraderPavan)"
-    )
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": True
-    }
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except:
-        pass
-
-def analyze_market():
-    processed_data = []
-    live_news = get_live_crypto_news()
-    print(f"\n⚡ [{datetime.now().strftime('%H:%M:%S')}] System Intelligence Scan...")
-
-    for c in POPULAR_COINS:
-        price = get_binance_price(c['symbol'])
-        rand_val = random.randint(1, 3)
-
-        if rand_val == 1:
-            signal = "INSTITUTIONAL BUY 🟢"
-            macro_trend = "STRONG BULLISH 📈"
-            mode = "TRENDING VOL"
-            stop_loss = f"${price * 0.97:,.2f}"
-            target = f"${price * 1.04:,.2f} - ${price * 1.07:,.2f}"
-        elif rand_val == 2:
-            signal = "INSTITUTIONAL SHORT 🔴"
-            macro_trend = "BEARISH 📉"
-            mode = "HIGH VOLATILITY"
-            stop_loss = f"${price * 1.03:,.2f}"
-            target = f"${price * 0.94:,.2f} - ${price * 0.97:,.2f}"
-        else:
-            signal = "HOLD 🟡"
-            macro_trend = "NEUTRAL 🔄"
-            mode = "SIDEWAYS"
-            stop_loss = f"${price * 0.98:,.2f}"
-            target = f"${price * 1.02:,.2f} - ${price * 1.04:,.2f}"
-
-        coin_payload = {
-            "symbol": c['symbol'],
-            "name": c['name'],
-            "logo": c['logo'],
-            "current_price": f"${price:,.2f}",
-            "macro_trend": macro_trend,
-            "signal": signal,
-            "mode": mode,
-            "vol_ratio": f"{random.uniform(1.2, 3.5):.2f}x",
-            "dynamic_stop_loss": stop_loss,
-            "target_range": target,
-            "supply_zone": f"${price * 1.05:,.2f} - ${price * 1.08:,.2f}",
-            "demand_zone": f"${price * 0.93:,.2f} - ${price * 0.96:,.2f}",
-            "live_news": live_news
-        }
-        processed_data.append(coin_payload)
-
-        if "BUY" in signal or "SHORT" in signal:
-            send_telegram_signal(coin_payload)
-            time.sleep(1)
-
-    return processed_data
-
-if __name__ == "__main__":
-    print("🚀 Pro_Plus SI Engine Started!")
-    while True:
-        try:
-            market_data = analyze_market()
-            headers = {
-                "X-SI-Token": SECRET_TOKEN,
-                "Content-Type": "application/json"
-            }
-            response = requests.post(
-                RAILWAY_URL,
-                json=market_data,
-                headers=headers,
-                timeout=15
-            )
-            if response.status_code == 200:
-                print("🎯 Data Successfully Sent to Railway!")
-            else:
-                print(f"⚠️ Railway Response: {response.status_code}")
-        except Exception as e:
-            print(f"❌ Error: {e}")
-        time.sleep(60)  # हर 1 मिनट में update
+        send_signal()
+        time.sleep(3600)  # हर 1 घंटे में signal
+    except Exception as e:
+        print(f'Error: {e}')
+        time.sleep(60)
+PYEOF
