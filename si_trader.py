@@ -2,9 +2,16 @@ cat > si_trader.py << 'PYEOF'
 import os, time, requests
 from datetime import datetime
 
+<<<<<<< HEAD
 BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 CHANNEL_ID = os.environ.get('TELEGRAM_CHANNEL_ID')
 API_KEY = os.environ.get('BINANCE_API_KEY')
+=======
+BOT_TOKEN = "8242319724:AAEu7_zaM-u7VeUGDNDjhqg7zgTVBH7KPRw"
+CHAT_ID = "@GlobalTraderPavan"
+RAILWAY_URL = "https://web-production-1f385.up.railway.app/api/update_prices"
+SECRET_TOKEN = "ProPlus_SI_Secure_2026"
+>>>>>>> 5c94ff072aebf112e1995845a08142e500b2bf09
 
 def get_price(symbol):
     try:
