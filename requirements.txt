@@ -2,7 +2,13 @@ flask
 requests
 websocket-client
 colorama
-python-telegram-bot
+python-telegram-bot==20.7
 ccxt
 pandas
 numpy
+ta
+apscheduler
+python-dotenv
+psycopg2-binary
+beautifulsoup4
+schedule
